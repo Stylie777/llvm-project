@@ -1776,8 +1776,8 @@ static void genTaskloopClauses(
 
   cp.processTODO<clause::Allocate, clause::Collapse, clause::Default,
                  clause::Final, clause::If, clause::InReduction,
-                 clause::Lastprivate, clause::Mergeable, clause::Nogroup,
-                 clause::Priority, clause::Shared, clause::Untied>(
+                 clause::Mergeable, clause::Nogroup, clause::Priority,
+                 clause::Shared, clause::Untied>(
       loc, llvm::omp::Directive::OMPD_taskloop);
 }
 
