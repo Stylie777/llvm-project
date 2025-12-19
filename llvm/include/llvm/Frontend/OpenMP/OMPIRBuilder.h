@@ -1374,7 +1374,7 @@ public:
       const LocationDescription &Loc, InsertPointTy AllocaIP,
       BodyGenCallbackTy BodyGenCB,
       llvm::function_ref<llvm::Expected<llvm::CanonicalLoopInfo *>()> LoopInfo,
-      Value *LBVal, Value *UBVal, Value *StepVal, bool Tied = true);
+      Value *LBVal, Value *UBVal, Value *StepVal, bool Tied = false, Value *IfCond = nullptr, Value* GrainSize = nullptr, bool NoGroup = false, int Sched = 0);
 
   /// Generator for `#omp task`
   ///

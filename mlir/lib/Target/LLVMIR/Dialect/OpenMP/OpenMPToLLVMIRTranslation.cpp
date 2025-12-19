@@ -451,14 +451,11 @@ static LogicalResult checkImplementationStatus(Operation &op) {
       .Case([&](omp::TaskloopOp op) {
         checkAllocate(op, result);
         checkFinal(op, result);
-        checkGrainsize(op, result);
-        checkIf(op, result);
         checkInReduction(op, result);
         checkMergeable(op, result);
-        checkNogroup(op, result);
-        checkNumTasks(op, result);
+        // checkNogroup(op, result);
         checkReduction(op, result);
-        checkUntied(op, result);
+        // checkUntied(op, result);
         checkPriority(op, result);
       })
       .Case([&](omp::WsloopOp op) {
@@ -2650,13 +2647,29 @@ convertOmpTaskloopOp(Operation &opInst, llvm::IRBuilderBase &builder,
     return loopInfo;
   };
 
+  llvm::Value *ifCond = nullptr;
+  llvm::Value *grainsize = nullptr;
+  int sched = 0; // default
+  Value grainsizeVal = taskloopOp.getGrainsize();
+  Value numTasksVal = taskloopOp.getNumTasks();
+  if (Value ifVar = taskloopOp.getIfExpr())
+    ifCond = moduleTranslation.lookupValue(ifVar);
+  if (grainsizeVal) {
+    grainsize = moduleTranslation.lookupValue(grainsizeVal);
+    sched = 1; // grainsize
+  } else if (numTasksVal) {
+    grainsize = moduleTranslation.lookupValue(numTasksVal);
+    sched = 2; // num_tasks
+  }
+
   llvm::OpenMPIRBuilder::LocationDescription ompLoc(builder);
   llvm::OpenMPIRBuilder::InsertPointOrErrorTy afterIP =
       moduleTranslation.getOpenMPBuilder()->createTaskloop(
           ompLoc, allocaIP, bodyCB, loopInfo,
           moduleTranslation.lookupValue(loopOp.getLoopLowerBounds()[0]),
           moduleTranslation.lookupValue(loopOp.getLoopUpperBounds()[0]),
-          moduleTranslation.lookupValue(loopOp.getLoopSteps()[0]));
+          moduleTranslation.lookupValue(loopOp.getLoopSteps()[0]),
+          taskloopOp.getUntied(), ifCond, grainsize, taskloopOp.getNogroup(), sched);
 
   if (failed(handleError(afterIP, opInst)))
     return failure();
