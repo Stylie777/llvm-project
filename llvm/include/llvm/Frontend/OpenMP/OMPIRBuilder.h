@@ -2280,7 +2280,8 @@ public:
     PostOutlineCBTy PostOutlineCB;
     BasicBlock *EntryBB, *ExitBB, *OuterAllocaBB;
     SmallVector<Value *, 2> ExcludeArgsFromAggregate;
-    SetVector<Value *> Inputs, Outputs;
+    /// For Taskloop, certain Inputs, such as the loop bound information, needs to be ina. fixed position in the aggregate structure to ensure the correct values are picked up by GEP's defined as part of the outlining callback.
+    SetVector<Value *> Inputs;
 
     /// Collect all blocks in between EntryBB and ExitBB in both the given
     /// vector and set.

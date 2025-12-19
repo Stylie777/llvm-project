@@ -395,9 +395,9 @@ Value *createFakeIntVal(IRBuilderBase &Builder,
                         OpenMPIRBuilder::InsertPointTy OuterAllocaIP,
                         llvm::SmallVectorImpl<Instruction *> &ToBeDeleted,
                         OpenMPIRBuilder::InsertPointTy InnerAllocaIP,
-                        const Twine &Name = "", bool AsPtr = true, bool Is64Bit = false) {
+                        const Twine &Name = "", bool AsPtr = true, IntegerType *IntTy = nullptr) {
   Builder.restoreIP(OuterAllocaIP);
-  IntegerType *IntTy = Is64Bit ? Builder.getInt64Ty() : Builder.getInt32Ty();
+  IntTy = IntTy ? IntTy : Builder.getInt32Ty();
   Instruction *FakeVal;
   AllocaInst *FakeValAddr =
       Builder.CreateAlloca(IntTy, nullptr, Name + ".addr");
@@ -419,7 +419,7 @@ Value *createFakeIntVal(IRBuilderBase &Builder,
         Builder.CreateLoad(IntTy, FakeVal, Name + ".use");
   } else {
     UseFakeVal =
-        cast<BinaryOperator>(Builder.CreateAdd(FakeVal, Is64Bit ? Builder.getInt64(10) : Builder.getInt32(10)));
+        cast<BinaryOperator>(Builder.CreateAdd(FakeVal, ConstantInt::get(IntTy, 10)));
   }
   ToBeDeleted.push_back(UseFakeVal);
   return FakeVal;
@@ -752,7 +752,8 @@ void OpenMPIRBuilder::finalize(Function *Fn) {
     for (auto *V : OI.ExcludeArgsFromAggregate)
       Extractor.excludeArgFromAggregate(V);
 
-    Function *OutlinedFn = Extractor.extractCodeRegion(CEAC, OI.Inputs, OI.Outputs);
+    SetVector<Value *> Outputs;
+    Function *OutlinedFn = Extractor.extractCodeRegion(CEAC, OI.Inputs, Outputs);
 
     // Forward target-cpu, target-features attributes to the outlined function.
     auto TargetCpuAttr = OuterFn->getFnAttribute("target-cpu");
@@ -1985,12 +1986,12 @@ OpenMPIRBuilder::InsertPointOrErrorTy OpenMPIRBuilder::createTaskloop(
   OI.ExcludeArgsFromAggregate.push_back(createFakeIntVal(
       Builder, AllocaIP, ToBeDeleted, TaskloopAllocaIP, "global.tid", false));
   Value *FakeLB = createFakeIntVal(Builder, AllocaIP, ToBeDeleted, TaskloopAllocaIP,
-                   "lb", false, true);
+                   "lb", /*AsPtr=*/false, Builder.getInt64Ty());
   Value *FakeUB = createFakeIntVal(Builder, AllocaIP, ToBeDeleted, TaskloopAllocaIP,
-                   "ub", false, true);
+                   "ub", /*AsPtr=*/false, Builder.getInt64Ty());
   Value *FakeStep = createFakeIntVal(Builder, AllocaIP, ToBeDeleted, TaskloopAllocaIP,
-                   "step", false, true);
-  /* For Taskloop, we want to force the bounds being the first 3 inputs in the aggregate struct*/
+                   "step", /*AsPtr=*/false, Builder.getInt64Ty());
+  // For Taskloop, we want to force the bounds being the first 3 inputs in the aggregate struct*/
   OI.Inputs.insert(FakeLB);
   OI.Inputs.insert(FakeUB);
   OI.Inputs.insert(FakeStep);
@@ -2003,7 +2004,7 @@ OpenMPIRBuilder::InsertPointOrErrorTy OpenMPIRBuilder::createTaskloop(
            "there must be a single user for the outlined function");
     CallInst *StaleCI = cast<CallInst>(OutlinedFn.user_back());
 
-    /* Create the casting for the Bounds Values that can be used when outlining to replace the uses of the fakes with real values */
+    // Create the casting for the Bounds Values that can be used when outlining to replace the uses of the fakes with real values */
     BasicBlock *CodeReplBB = StaleCI->getParent();
     IRBuilderBase::InsertPoint CurrentIp = Builder.saveIP();
     Builder.SetInsertPoint(CodeReplBB->getFirstInsertionPt());
@@ -2032,8 +2033,9 @@ OpenMPIRBuilder::InsertPointOrErrorTy OpenMPIRBuilder::createTaskloop(
     Value *TaskSize = Builder.getInt64(
         divideCeil(M.getDataLayout().getTypeSizeInBits(Taskloop), 8));
 
+    Value *Shareds = StaleCI->getArgOperand(1);
     AllocaInst *ArgStructAlloca =
-        dyn_cast<AllocaInst>(StaleCI->getArgOperand(1));
+        dyn_cast<AllocaInst>(Shareds);
     assert(ArgStructAlloca &&
            "Unable to find the alloca instruction corresponding to arguments "
            "for extracted function");
@@ -2052,7 +2054,6 @@ OpenMPIRBuilder::InsertPointOrErrorTy OpenMPIRBuilder::createTaskloop(
                       /*sizeof_task=*/TaskSize, /*sizeof_shared=*/SharedsSize,
                       /*task_func=*/&OutlinedFn});
 
-    Value *Shareds = StaleCI->getArgOperand(1);
     Align Alignment = TaskData->getPointerAlignment(M.getDataLayout());
     Value *TaskShareds = Builder.CreateLoad(VoidPtr, TaskData);
     Builder.CreateMemCpy(TaskShareds, Alignment, Shareds, Alignment,
@@ -2116,6 +2117,8 @@ OpenMPIRBuilder::InsertPointOrErrorTy OpenMPIRBuilder::createTaskloop(
     for (Instruction &I : *TaskloopAllocaBB) {
       if (I.getOpcode() == Instruction::GetElementPtr) {
         GetElementPtrInst &Gep = cast<GetElementPtrInst>(I);
+        if (Gep.getOperand(0) != SharedsOutlined)
+          continue;
         if (ConstantInt *CI = dyn_cast<ConstantInt>(Gep.getOperand(2))) {
           switch (CI->getZExtValue()) {
           case 0:
