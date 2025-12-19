@@ -2072,7 +2072,7 @@ OpenMPIRBuilder::InsertPointOrErrorTy OpenMPIRBuilder::createTaskloop(
     // set up the arguments for emitting kmpc_taskloop runtime call
     // setting values for ifval, nogroup, sched, grainsize, task_dup
     Value *IfCondVal = IfCond ? Builder.CreateIntCast(IfCond, Builder.getInt32Ty(), true) : Builder.getInt32(1);
-    Value *NoGroupVal = Builder.getInt32(NoGroup ? 0 : 1);
+    Value *NoGroupVal = Builder.getInt32(NoGroup);
     Value *SchedVal = Builder.getInt32(Sched);
     Value *GrainSizeVal = GrainSize ? Builder.CreateIntCast(GrainSize, Builder.getInt64Ty(), true) : Builder.getInt64(0);
 
